@@ -21,7 +21,7 @@ app.use('/uploads', express.static('uploads'));
 // Хранилище пользователей и сообщений (в памяти)
 const users = {};
 const messages = {};
-
+const chats = {};
 // === ОБРАБОТЧИКИ API ===
 
 // Регистрация
