@@ -1,14 +1,28 @@
 const express = require('express');
 const app = express();
 const path = require('path');
+const multer = require('multer');
+const WebSocket = require('ws');
+const http = require('http');
+
+// Создаём сервер для WebSocket
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Настройка multer для загрузки файлов
+const upload = multer({ dest: 'uploads/' });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Хранилище (в памяти)
+// Раздаём загруженные файлы
+app.use('/uploads', express.static('uploads'));
+
+// Хранилище пользователей и сообщений (в памяти)
 const users = {};
-const chats = {};
 const messages = {};
+
+// === ОБРАБОТЧИКИ API ===
 
 // Регистрация
 app.post('/register', (req, res) => {
@@ -28,6 +42,13 @@ app.post('/login', (req, res) => {
   res.json({ success: true, message: 'Добро пожаловать!' });
 });
 
+// Загрузка файлов
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const fileUrl = `/uploads/${req.file.filename}`;
+  res.json({ fileUrl });
+});
+
 // Создать чат
 app.post('/chats', (req, res) => {
   const { name, creator } = req.body;
@@ -39,7 +60,7 @@ app.post('/chats', (req, res) => {
   res.json({ chatId, chat: chats[chatId] });
 });
 
-// Получить список чатов пользователя
+// Получить список чатов
 app.get('/chats/:username', (req, res) => {
   const { username } = req.params;
   if (!users[username]) return res.status(404).json({ error: 'Пользователь не найден' });
@@ -49,9 +70,14 @@ app.get('/chats/:username', (req, res) => {
 
 // Отправить сообщение
 app.post('/messages', (req, res) => {
-  const { chatId, sender, text } = req.body;
+  const { chatId, sender, text, fileUrl } = req.body;
   if (!chats[chatId]) return res.status(404).json({ error: 'Чат не найден' });
-  const msg = { sender, text, time: new Date().toISOString() };
+  const msg = { 
+    sender, 
+    text, 
+    fileUrl: fileUrl || null,
+    timestamp: new Date().toISOString()
+  };
   messages[chatId].push(msg);
   res.json(msg);
 });
@@ -63,11 +89,35 @@ app.get('/messages/:chatId', (req, res) => {
   res.json(messages[chatId] || []);
 });
 
+// === WEBSOCKET ДЛЯ ИНДИКАТОРА ПЕЧАТИ ===
+wss.on('connection', (ws) => {
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+      if (data.type === 'typing') {
+        // Отправляем всем, кроме отправителя
+        wss.clients.forEach(client => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'typing',
+              user: data.user
+            }));
+          }
+        });
+      }
+    } catch (e) {
+      console.error('WebSocket error:', e);
+    }
+  });
+});
+
+// Отдаём index.html для любых других запросов
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Запуск сервера
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
