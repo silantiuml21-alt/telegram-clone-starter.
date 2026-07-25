@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="manifest" href="/manifest.json">
-  <title>Мой Мессенджер</title>
+  <title>Rocket</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #0e1621; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
@@ -45,6 +45,7 @@
     #send:hover { background: #3a6b94; }
 
     .hidden { display: none !important; }
+    #typingIndicator { padding: 5px 12px; color: #7e9bb5; font-size: 14px; font-style: italic; min-height: 24px; }
   </style>
 </head>
 <body>
@@ -76,12 +77,15 @@
     </div>
 
     <!-- Окно сообщений -->
-    <div id="messages" class="hidden">
-      <!-- Сообщения будут здесь -->
-    </div>
+    <div id="messages" class="hidden"></div>
+
+    <!-- Индикатор печати -->
+    <div id="typingIndicator"></div>
 
     <!-- Поле ввода -->
     <div id="footer" class="hidden">
+      <input type="file" id="fileInput" style="display:none;">
+      <button id="attachBtn">📎</button>
       <input id="input" placeholder="Введите сообщение...">
       <button id="send">➤</button>
     </div>
@@ -104,17 +108,49 @@ const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const logoutBtn = document.getElementById('logout');
 const chatTitle = document.getElementById('chat-title');
+const typingIndicator = document.getElementById('typingIndicator');
 
 let currentUser = null;
 let currentChat = null;
 const chatMessages = {};
+let ws = null;
 
-// Стартовые сообщения
-chatMessages['1'] = [{ from: 'received', text: 'Привет! Как дела?', time: '10:15' }];
-chatMessages['2'] = [{ from: 'received', text: 'Ты сегодня на встречу?', time: '11:30' }];
-chatMessages['3'] = [{ from: 'sent', text: 'Скинь документ', time: '12:00' }];
+// === ФОРМАТИРОВАНИЕ ДАТЫ ===
+function formatMessageDate(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
 
-// Вход
+  if (diff < 24 * 60 * 60 * 1000) return 'сегодня';
+  if (diff < 48 * 60 * 60 * 1000) return 'вчера';
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
+// === ПОДКЛЮЧЕНИЕ WEBSOCKET ===
+function connectWebSocket() {
+  ws = new WebSocket('wss://' + window.location.host);
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'typing') {
+        typingIndicator.textContent = `${data.user} печатает...`;
+        clearTimeout(window.typingTimeout);
+        window.typingTimeout = setTimeout(() => {
+          typingIndicator.textContent = '';
+        }, 2000);
+      }
+    } catch (e) {
+      console.error('WebSocket error:', e);
+    }
+  };
+}
+
+// === СТАРТОВЫЕ СООБЩЕНИЯ ===
+chatMessages['1'] = [{ sender: 'received', text: 'Привет! Как дела?', timestamp: new Date(Date.now() - 60000).toISOString() }];
+chatMessages['2'] = [{ sender: 'received', text: 'Ты сегодня на встречу?', timestamp: new Date(Date.now() - 120000).toISOString() }];
+chatMessages['3'] = [{ sender: 'sent', text: 'Скинь документ', timestamp: new Date(Date.now() - 180000).toISOString() }];
+
+// === ВХОД ===
 loginBtn.onclick = async () => {
   const user = loginUsername.value.trim();
   const pass = loginPassword.value.trim();
@@ -135,6 +171,7 @@ loginBtn.onclick = async () => {
       loginScreen.classList.remove('active');
       chatScreen.classList.add('active');
       chatTitle.textContent = `👤 ${user}`;
+      connectWebSocket();
     } else {
       loginMessage.textContent = data.error || 'Ошибка входа';
     }
@@ -143,7 +180,7 @@ loginBtn.onclick = async () => {
   }
 };
 
-// Регистрация
+// === РЕГИСТРАЦИЯ ===
 registerBtn.onclick = async () => {
   const user = loginUsername.value.trim();
   const pass = loginPassword.value.trim();
@@ -164,7 +201,7 @@ registerBtn.onclick = async () => {
   }
 };
 
-// Открыть чат
+// === ОТКРЫТЬ ЧАТ ===
 function openChat(chatId, chatName) {
   currentChat = chatId;
   chatTitle.textContent = chatName;
@@ -175,47 +212,108 @@ function openChat(chatId, chatName) {
   input.focus();
 }
 
-// Рендер сообщений
+// === РЕНДЕР СООБЩЕНИЙ ===
 function renderMessages(chatId) {
   messagesDiv.innerHTML = '';
   const msgs = chatMessages[chatId] || [];
   msgs.forEach(msg => {
     const div = document.createElement('div');
-    div.className = `msg ${msg.from}`;
-    div.innerHTML = `${msg.text} <div class="time">${msg.time || '—'}</div>`;
+    const isSent = msg.sender === 'sent' || msg.sender === currentUser;
+    div.className = `msg ${isSent ? 'sent' : 'received'}`;
+    
+    const dateStr = formatMessageDate(msg.timestamp);
+    const timeStr = new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    
+    let content = msg.text;
+    if (msg.fileUrl) {
+      content = `<a href="${msg.fileUrl}" target="_blank" style="color:#2b5278;">📎 Файл</a>`;
+    }
+    
+    div.innerHTML = `${content} <div class="time">${dateStr} ${timeStr}</div>`;
     messagesDiv.appendChild(div);
   });
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// Отправить сообщение
+// === ОТПРАВКА СООБЩЕНИЯ ===
+async function sendMessage(text, isFile = false) {
+  if (!text || !currentChat) return;
+  
+  const msg = {
+    chatId: currentChat,
+    sender: currentUser,
+    text: isFile ? '📎 Файл' : text,
+    fileUrl: isFile ? text : null,
+    timestamp: new Date().toISOString()
+  };
+  
+  try {
+    const res = await fetch('/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(msg)
+    });
+    const savedMsg = await res.json();
+    if (!chatMessages[currentChat]) chatMessages[currentChat] = [];
+    chatMessages[currentChat].push(savedMsg);
+    renderMessages(currentChat);
+  } catch (e) {
+    console.error('Ошибка отправки:', e);
+  }
+}
+
+// === ОБРАБОТЧИКИ КНОПОК ===
 sendBtn.onclick = () => {
   const text = input.value.trim();
-  if (!text || !currentChat) return;
-  const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  if (!chatMessages[currentChat]) chatMessages[currentChat] = [];
-  chatMessages[currentChat].push({ from: 'sent', text, time });
-  renderMessages(currentChat);
-  input.value = '';
-
-  // Имитация ответа
-  const replies = ['Ок', 'Понял', 'Хорошо', 'Спасибо', 'Да', 'Нет', 'Интересно', 'Круто!', '😄', '👌'];
-  setTimeout(() => {
-    if (currentChat) {
-      const reply = replies[Math.floor(Math.random() * replies.length)];
-      const replyTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      chatMessages[currentChat].push({ from: 'received', text: reply, time: replyTime });
-      renderMessages(currentChat);
-    }
-  }, 1000 + Math.random() * 2000);
+  if (text) {
+    sendMessage(text);
+    input.value = '';
+  }
 };
 
-// Обработка Enter
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendBtn.click();
 });
 
-// Клик по чату
+// === ИНДИКАТОР ПЕЧАТИ ===
+let typingTimer;
+input.addEventListener('input', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'typing', user: currentUser }));
+  }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    // Можно отправить сигнал "остановил печатать"
+  }, 2000);
+});
+
+// === ЗАГРУЗКА ФАЙЛОВ ===
+document.getElementById('attachBtn').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (data.fileUrl) {
+      sendMessage(data.fileUrl, true);
+    }
+  } catch (e) {
+    console.error('Ошибка загрузки:', e);
+  }
+});
+
+// === КЛИК ПО ЧАТУ ===
 document.querySelectorAll('.chat-item').forEach(el => {
   el.onclick = () => {
     const id = el.dataset.chat;
@@ -224,10 +322,11 @@ document.querySelectorAll('.chat-item').forEach(el => {
   };
 });
 
-// Выход
+// === ВЫХОД ===
 logoutBtn.onclick = () => {
   currentUser = null;
   currentChat = null;
+  if (ws) ws.close();
   chatScreen.classList.remove('active');
   loginScreen.classList.add('active');
   chatList.classList.remove('hidden');
