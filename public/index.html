@@ -6,57 +6,234 @@
   <link rel="manifest" href="/manifest.json">
   <title>Мой Мессенджер</title>
   <style>
-    body { font-family: Arial; background: #0e1621; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; flex-direction: column; }
-    .container { background: #17212b; padding: 30px; border-radius: 16px; width: 300px; }
-    input { width: 100%; padding: 10px; margin: 8px 0; border-radius: 8px; border: none; background: #2b3b4a; color: #fff; }
-    button { width: 100%; padding: 10px; background: #2b5278; color: #fff; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px; }
-    button:hover { background: #3a6b94; }
-    #message { margin-top: 10px; color: #7e9bb5; text-align: center; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { background: #0e1621; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    #app { width: 100%; max-width: 500px; height: 700px; background: #17212b; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
+    #login-screen, #chat-screen { display: none; flex-direction: column; height: 100%; }
+    #login-screen.active, #chat-screen.active { display: flex; }
+
+    /* Логин */
+    #login-screen { justify-content: center; align-items: center; padding: 20px; }
+    #login-screen .container { background: #1e2a36; padding: 30px; border-radius: 16px; width: 100%; max-width: 300px; }
+    #login-screen input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: none; background: #2b3b4a; color: #fff; }
+    #login-screen button { width: 100%; padding: 12px; background: #2b5278; color: #fff; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px; }
+    #login-screen button:hover { background: #3a6b94; }
+    #login-message { margin-top: 10px; color: #7e9bb5; text-align: center; }
+
+    /* Шапка чата */
+    #header { background: #1e2a36; padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2b3b4a; }
+    #header span { font-weight: bold; }
+    #logout { background: #2b5278; color: #fff; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+
+    /* Список чатов */
+    #chat-list { flex: 1; padding: 12px; overflow-y: auto; }
+    .chat-item { padding: 14px; background: #1e2a36; border-radius: 12px; margin-bottom: 10px; cursor: pointer; border-left: 4px solid #2b5278; }
+    .chat-item:hover { background: #253544; }
+
+    /* Окно сообщений */
+    #messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: #17212b; }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; word-wrap: break-word; font-size: 15px; }
+    .msg.sent { align-self: flex-end; background: #2b5278; color: #fff; border-bottom-right-radius: 4px; }
+    .msg.received { align-self: flex-start; background: #1e2a36; color: #e0e0e0; border-bottom-left-radius: 4px; }
+    .msg .time { font-size: 11px; opacity: 0.6; margin-top: 4px; text-align: right; }
+
+    /* Поле ввода */
+    #footer { display: flex; padding: 10px; background: #1e2a36; border-top: 1px solid #2b3b4a; gap: 8px; }
+    #input { flex: 1; padding: 12px; border: none; border-radius: 20px; background: #2b3b4a; color: #fff; font-size: 15px; outline: none; }
+    #input::placeholder { color: #7e9bb5; }
+    #send { background: #2b5278; color: #fff; border: none; border-radius: 20px; padding: 12px 20px; font-weight: bold; cursor: pointer; }
+    #send:hover { background: #3a6b94; }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>🔐 Вход / Регистрация</h2>
-    <input type="text" id="username" placeholder="Логин">
-    <input type="password" id="password" placeholder="Пароль">
-    <button id="loginBtn">Войти</button>
-    <button id="registerBtn">Зарегистрироваться</button>
-    <div id="message"></div>
+<div id="app">
+  <!-- Экран входа -->
+  <div id="login-screen" class="active">
+    <div class="container">
+      <h2>🔐 Вход / Регистрация</h2>
+      <input type="text" id="login-username" placeholder="Логин">
+      <input type="password" id="login-password" placeholder="Пароль">
+      <button id="login-btn">Войти</button>
+      <button id="register-btn">Зарегистрироваться</button>
+      <div id="login-message"></div>
+    </div>
   </div>
 
-  <script>
-    const username = document.getElementById('username');
-    const password = document.getElementById('password');
-    const loginBtn = document.getElementById('loginBtn');
-    const registerBtn = document.getElementById('registerBtn');
-    const message = document.getElementById('message');
+  <!-- Экран чата -->
+  <div id="chat-screen">
+    <div id="header">
+      <span id="chat-title">Мой Мессенджер</span>
+      <button id="logout">Выйти</button>
+    </div>
 
-    async function sendRequest(url, data) {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      return res.json();
+    <!-- Список чатов -->
+    <div id="chat-list">
+      <div class="chat-item" data-chat="1">👤 Алексей</div>
+      <div class="chat-item" data-chat="2">👤 Марина</div>
+      <div class="chat-item" data-chat="3">👤 Денис</div>
+    </div>
+
+    <!-- Окно сообщений -->
+    <div id="messages" class="hidden">
+      <!-- Сообщения будут здесь -->
+    </div>
+
+    <!-- Поле ввода -->
+    <div id="footer" class="hidden">
+      <input id="input" placeholder="Введите сообщение...">
+      <button id="send">➤</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// === ЛОГИКА МЕССЕНДЖЕРА ===
+const loginScreen = document.getElementById('login-screen');
+const chatScreen = document.getElementById('chat-screen');
+const loginUsername = document.getElementById('login-username');
+const loginPassword = document.getElementById('login-password');
+const loginBtn = document.getElementById('login-btn');
+const registerBtn = document.getElementById('register-btn');
+const loginMessage = document.getElementById('login-message');
+
+const chatList = document.getElementById('chat-list');
+const messagesDiv = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const logoutBtn = document.getElementById('logout');
+const chatTitle = document.getElementById('chat-title');
+
+let currentUser = null;
+let currentChat = null;
+const chatMessages = {};
+
+// Стартовые сообщения
+chatMessages['1'] = [{ from: 'received', text: 'Привет! Как дела?', time: '10:15' }];
+chatMessages['2'] = [{ from: 'received', text: 'Ты сегодня на встречу?', time: '11:30' }];
+chatMessages['3'] = [{ from: 'sent', text: 'Скинь документ', time: '12:00' }];
+
+// Вход
+loginBtn.onclick = async () => {
+  const user = loginUsername.value.trim();
+  const pass = loginPassword.value.trim();
+  if (!user || !pass) {
+    loginMessage.textContent = 'Введите логин и пароль';
+    return;
+  }
+  try {
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentUser = user;
+      loginMessage.textContent = '';
+      loginScreen.classList.remove('active');
+      chatScreen.classList.add('active');
+      chatTitle.textContent = `👤 ${user}`;
+    } else {
+      loginMessage.textContent = data.error || 'Ошибка входа';
     }
+  } catch {
+    loginMessage.textContent = 'Сервер не отвечает';
+  }
+};
 
-    loginBtn.onclick = async () => {
-      const result = await sendRequest('/login', {
-        username: username.value,
-        password: password.value
-      });
-      message.textContent = result.message || result.error;
-      message.style.color = result.success ? '#4caf50' : '#f44336';
-    };
+// Регистрация
+registerBtn.onclick = async () => {
+  const user = loginUsername.value.trim();
+  const pass = loginPassword.value.trim();
+  if (!user || !pass) {
+    loginMessage.textContent = 'Введите логин и пароль';
+    return;
+  }
+  try {
+    const res = await fetch('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+    loginMessage.textContent = data.message || data.error;
+  } catch {
+    loginMessage.textContent = 'Сервер не отвечает';
+  }
+};
 
-    registerBtn.onclick = async () => {
-      const result = await sendRequest('/register', {
-        username: username.value,
-        password: password.value
-      });
-      message.textContent = result.message || result.error;
-      message.style.color = result.success ? '#4caf50' : '#f44336';
-    };
-  </script>
+// Открыть чат
+function openChat(chatId, chatName) {
+  currentChat = chatId;
+  chatTitle.textContent = chatName;
+  chatList.classList.add('hidden');
+  messagesDiv.classList.remove('hidden');
+  document.getElementById('footer').classList.remove('hidden');
+  renderMessages(chatId);
+  input.focus();
+}
+
+// Рендер сообщений
+function renderMessages(chatId) {
+  messagesDiv.innerHTML = '';
+  const msgs = chatMessages[chatId] || [];
+  msgs.forEach(msg => {
+    const div = document.createElement('div');
+    div.className = `msg ${msg.from}`;
+    div.innerHTML = `${msg.text} <div class="time">${msg.time || '—'}</div>`;
+    messagesDiv.appendChild(div);
+  });
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Отправить сообщение
+sendBtn.onclick = () => {
+  const text = input.value.trim();
+  if (!text || !currentChat) return;
+  const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  if (!chatMessages[currentChat]) chatMessages[currentChat] = [];
+  chatMessages[currentChat].push({ from: 'sent', text, time });
+  renderMessages(currentChat);
+  input.value = '';
+
+  // Имитация ответа
+  const replies = ['Ок', 'Понял', 'Хорошо', 'Спасибо', 'Да', 'Нет', 'Интересно', 'Круто!', '😄', '👌'];
+  setTimeout(() => {
+    if (currentChat) {
+      const reply = replies[Math.floor(Math.random() * replies.length)];
+      const replyTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      chatMessages[currentChat].push({ from: 'received', text: reply, time: replyTime });
+      renderMessages(currentChat);
+    }
+  }, 1000 + Math.random() * 2000);
+};
+
+// Обработка Enter
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendBtn.click();
+});
+
+// Клик по чату
+document.querySelectorAll('.chat-item').forEach(el => {
+  el.onclick = () => {
+    const id = el.dataset.chat;
+    const name = el.textContent.trim();
+    openChat(id, name);
+  };
+});
+
+// Выход
+logoutBtn.onclick = () => {
+  currentUser = null;
+  currentChat = null;
+  chatScreen.classList.remove('active');
+  loginScreen.classList.add('active');
+  chatList.classList.remove('hidden');
+  messagesDiv.classList.add('hidden');
+  document.getElementById('footer').classList.add('hidden');
+};
+</script>
 </body>
 </html>
