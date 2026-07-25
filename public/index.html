@@ -12,7 +12,6 @@
     #login-screen, #chat-screen { display: none; flex-direction: column; height: 100%; }
     #login-screen.active, #chat-screen.active { display: flex; }
 
-    /* Логин */
     #login-screen { justify-content: center; align-items: center; padding: 20px; }
     #login-screen .container { background: #1e2a36; padding: 30px; border-radius: 16px; width: 100%; max-width: 300px; }
     #login-screen input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: none; background: #2b3b4a; color: #fff; }
@@ -20,24 +19,22 @@
     #login-screen button:hover { background: #3a6b94; }
     #login-message { margin-top: 10px; color: #7e9bb5; text-align: center; }
 
-    /* Шапка чата */
-    #header { background: #1e2a36; padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2b3b4a; }
+    #header { background: #1e2a36; padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2b3b4a; gap: 8px; }
     #header span { font-weight: bold; }
+    #search-input { background: #2b3b4a; border: none; padding: 6px 12px; border-radius: 12px; color: #fff; width: 100px; }
+    #search-input::placeholder { color: #7e9bb5; }
     #logout { background: #2b5278; color: #fff; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
 
-    /* Список чатов */
     #chat-list { flex: 1; padding: 12px; overflow-y: auto; }
     .chat-item { padding: 14px; background: #1e2a36; border-radius: 12px; margin-bottom: 10px; cursor: pointer; border-left: 4px solid #2b5278; }
     .chat-item:hover { background: #253544; }
 
-    /* Окно сообщений */
     #messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: #17212b; }
-    .msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; word-wrap: break-word; font-size: 15px; }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; word-wrap: break-word; font-size: 15px; cursor: pointer; }
     .msg.sent { align-self: flex-end; background: #2b5278; color: #fff; border-bottom-right-radius: 4px; }
     .msg.received { align-self: flex-start; background: #1e2a36; color: #e0e0e0; border-bottom-left-radius: 4px; }
     .msg .time { font-size: 11px; opacity: 0.6; margin-top: 4px; text-align: right; }
 
-    /* Поле ввода */
     #footer { display: flex; padding: 10px; background: #1e2a36; border-top: 1px solid #2b3b4a; gap: 8px; }
     #input { flex: 1; padding: 12px; border: none; border-radius: 20px; background: #2b3b4a; color: #fff; font-size: 15px; outline: none; }
     #input::placeholder { color: #7e9bb5; }
@@ -66,23 +63,19 @@
   <div id="chat-screen">
     <div id="header">
       <span id="chat-title">Мой Мессенджер</span>
+      <input type="text" id="search-input" placeholder="🔍 Поиск...">
       <button id="logout">Выйти</button>
     </div>
 
-    <!-- Список чатов -->
     <div id="chat-list">
       <div class="chat-item" data-chat="1">👤 Алексей</div>
       <div class="chat-item" data-chat="2">👤 Марина</div>
       <div class="chat-item" data-chat="3">👤 Денис</div>
     </div>
 
-    <!-- Окно сообщений -->
     <div id="messages" class="hidden"></div>
-
-    <!-- Индикатор печати -->
     <div id="typingIndicator"></div>
 
-    <!-- Поле ввода -->
     <div id="footer" class="hidden">
       <input type="file" id="fileInput" style="display:none;">
       <button id="attachBtn">📎</button>
@@ -109,6 +102,7 @@ const sendBtn = document.getElementById('send');
 const logoutBtn = document.getElementById('logout');
 const chatTitle = document.getElementById('chat-title');
 const typingIndicator = document.getElementById('typingIndicator');
+const searchInput = document.getElementById('search-input');
 
 let currentUser = null;
 let currentChat = null;
@@ -120,7 +114,6 @@ function formatMessageDate(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now - date;
-
   if (diff < 24 * 60 * 60 * 1000) return 'сегодня';
   if (diff < 48 * 60 * 60 * 1000) return 'вчера';
   return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
@@ -210,13 +203,17 @@ function openChat(chatId, chatName) {
   document.getElementById('footer').classList.remove('hidden');
   renderMessages(chatId);
   input.focus();
+  searchInput.value = '';
 }
 
 // === РЕНДЕР СООБЩЕНИЙ ===
-function renderMessages(chatId) {
+function renderMessages(chatId, filter = '') {
   messagesDiv.innerHTML = '';
-  const msgs = chatMessages[chatId] || [];
-  msgs.forEach(msg => {
+  let msgs = chatMessages[chatId] || [];
+  if (filter) {
+    msgs = msgs.filter(msg => msg.text.toLowerCase().includes(filter.toLowerCase()));
+  }
+  msgs.forEach((msg, index) => {
     const div = document.createElement('div');
     const isSent = msg.sender === 'sent' || msg.sender === currentUser;
     div.className = `msg ${isSent ? 'sent' : 'received'}`;
@@ -230,15 +227,72 @@ function renderMessages(chatId) {
     }
     
     div.innerHTML = `${content} <div class="time">${dateStr} ${timeStr}</div>`;
+    
+    // === КЛИК ПО СООБЩЕНИЮ (РЕДАКТИРОВАТЬ/УДАЛИТЬ) ===
+    if (msg.sender === currentUser) {
+      div.onclick = () => {
+        showMessageMenu(index, chatId, msg.text);
+      };
+    }
+    
     messagesDiv.appendChild(div);
   });
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
+// === МЕНЮ СООБЩЕНИЯ ===
+function showMessageMenu(msgIndex, chatId, currentText) {
+  const choice = confirm('Выберите действие:\nOK — Редактировать\nОтмена — Удалить');
+  if (choice === null) return; // Отмена (ничего не делать)
+  if (choice === true) {
+    const newText = prompt('Введите новый текст:', currentText);
+    if (newText && newText.trim()) {
+      editMessage(chatId, msgIndex, newText.trim());
+    }
+  } else {
+    if (confirm('Удалить это сообщение?')) {
+      deleteMessage(chatId, msgIndex);
+    }
+  }
+}
+
+// === РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ===
+async function editMessage(chatId, msgIndex, newText) {
+  try {
+    const res = await fetch(`/messages/${chatId}/${msgIndex}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: newText })
+    });
+    const data = await res.json();
+    if (data.success) {
+      chatMessages[chatId][msgIndex].text = newText;
+      renderMessages(chatId);
+    }
+  } catch (e) {
+    console.error('Ошибка редактирования:', e);
+  }
+}
+
+// === УДАЛЕНИЕ СООБЩЕНИЯ ===
+async function deleteMessage(chatId, msgIndex) {
+  try {
+    const res = await fetch(`/messages/${chatId}/${msgIndex}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (data.success) {
+      chatMessages[chatId].splice(msgIndex, 1);
+      renderMessages(chatId);
+    }
+  } catch (e) {
+    console.error('Ошибка удаления:', e);
+  }
+}
+
 // === ОТПРАВКА СООБЩЕНИЯ ===
 async function sendMessage(text, isFile = false) {
   if (!text || !currentChat) return;
-  
   const msg = {
     chatId: currentChat,
     sender: currentUser,
@@ -246,7 +300,6 @@ async function sendMessage(text, isFile = false) {
     fileUrl: isFile ? text : null,
     timestamp: new Date().toISOString()
   };
-  
   try {
     const res = await fetch('/messages', {
       method: 'POST',
@@ -262,7 +315,15 @@ async function sendMessage(text, isFile = false) {
   }
 }
 
-// === ОБРАБОТЧИКИ КНОПОК ===
+// === ПОИСК ===
+searchInput.addEventListener('input', () => {
+  if (currentChat) {
+    const filter = searchInput.value.trim();
+    renderMessages(currentChat, filter);
+  }
+});
+
+// === КНОПКИ ===
 sendBtn.onclick = () => {
   const text = input.value.trim();
   if (text) {
@@ -282,9 +343,6 @@ input.addEventListener('input', () => {
     ws.send(JSON.stringify({ type: 'typing', user: currentUser }));
   }
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    // Можно отправить сигнал "остановил печатать"
-  }, 2000);
 });
 
 // === ЗАГРУЗКА ФАЙЛОВ ===
@@ -295,10 +353,8 @@ document.getElementById('attachBtn').addEventListener('click', () => {
 document.getElementById('fileInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-
   const formData = new FormData();
   formData.append('file', file);
-
   try {
     const res = await fetch('/upload', {
       method: 'POST',
@@ -332,6 +388,7 @@ logoutBtn.onclick = () => {
   chatList.classList.remove('hidden');
   messagesDiv.classList.add('hidden');
   document.getElementById('footer').classList.add('hidden');
+  searchInput.value = '';
 };
 </script>
 </body>
